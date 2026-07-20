@@ -44,7 +44,14 @@ final class BookmarkStore: ObservableObject {
 
     private var saveTask: Task<Void, Never>?
 
-    init() {
+    /// Where the JSON store lives. Injectable so tests never touch the real one.
+    let storeURL: URL
+    /// Tests pass false so nothing ever hits the network.
+    let fetchesMetadata: Bool
+
+    init(storeURL: URL = AppPaths.storeFile, fetchesMetadata: Bool = true) {
+        self.storeURL = storeURL
+        self.fetchesMetadata = fetchesMetadata
         let savedSort = UserDefaults.standard.string(forKey: "berth.sortOrder")
         sortOrder = savedSort.flatMap(BookmarkSort.init(rawValue:)) ?? .dateAdded
         load()
@@ -237,6 +244,7 @@ final class BookmarkStore: ObservableObject {
     // MARK: - Metadata
 
     func refreshMetadata(for id: Bookmark.ID) {
+        guard fetchesMetadata else { return }
         Task { await fetchMetadata(id: id) }
     }
 
@@ -271,7 +279,7 @@ final class BookmarkStore: ObservableObject {
     // MARK: - Persistence (single JSON store, debounced, atomic)
 
     private func load() {
-        guard let data = try? Data(contentsOf: AppPaths.storeFile) else { return }
+        guard let data = try? Data(contentsOf: storeURL) else { return }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         if let loaded = try? decoder.decode([Bookmark].self, from: data) {
@@ -294,7 +302,7 @@ final class BookmarkStore: ObservableObject {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(bookmarks) else { return }
-        try? data.write(to: AppPaths.storeFile, options: .atomic)
+        try? data.write(to: storeURL, options: .atomic)
     }
 
     // MARK: - Import / export

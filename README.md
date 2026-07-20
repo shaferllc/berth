@@ -1,13 +1,17 @@
 # Berth
 
+[![CI](https://github.com/shaferllc/berth/actions/workflows/ci.yml/badge.svg)](https://github.com/shaferllc/berth/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/shaferllc/berth)](https://github.com/shaferllc/berth/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 *Berth — a place to tie up and return to.*
 
 Berth is a native macOS bookmark manager in the spirit of MarkWell: save a
 link in a second, hang a few tags on it, and actually find it again next
 month. It saves **links with metadata** — title, description, favicon — not
-article bodies. If you want full article capture for offline reading, that's
-the job of its sibling app [stow](../stow); Berth stays deliberately lighter.
-Everything lives in a single JSON file on your Mac. No account, no cloud.
+article bodies (full article capture is the job of its sibling app, stow;
+Berth stays deliberately lighter). Everything lives in a single JSON file on
+your Mac. No account, no cloud.
 
 ## Features
 
@@ -32,17 +36,48 @@ Everything lives in a single JSON file on your Mac. No account, no cloud.
 - Storage: one debounced, atomically-written JSON file in
   `~/Library/Application Support/Berth/`.
 
-## Build
+## Install
+
+Requires macOS 14 (Sonoma) or later.
+
+Download `Berth-<version>.zip` from the
+[latest release](https://github.com/shaferllc/berth/releases/latest), unzip,
+and drag `Berth.app` into /Applications.
+
+Releases are ad-hoc signed, not notarized, so the first launch is blocked by
+Gatekeeper. Either right-click the app and choose **Open** (then confirm in
+System Settings → Privacy & Security → **Open Anyway** on newer macOS), or
+clear the quarantine flag:
+
+```
+xattr -d com.apple.quarantine /Applications/Berth.app
+```
+
+## Build from source
 
 ```
 ./make-app.sh
 ```
 
 Builds a release binary, generates the icon, assembles `Berth.app`, installs
-it to /Applications, and launches it.
+it to /Applications, and launches it. `./build-app.sh` does just the build,
+leaving the bundle in `dist/` (this is what the release workflow runs).
+
+## Tests
+
+```
+swift test
+```
+
+Unit tests cover the data model, URL normalization and duplicate detection,
+HTML metadata scraping, and the store's filter/sort/undo/persistence logic.
 
 ## Not yet
 
 - iPhone/iPad sync — v1 is Mac-only; sync is the obvious next step.
 - Netscape HTML *import* (export works; import currently takes Berth JSON).
 - A browser extension for one-click saving.
+
+## License
+
+[MIT](LICENSE)

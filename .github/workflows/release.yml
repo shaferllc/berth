@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish Berth.app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        run: swift test
+
+      - name: Build app bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}" ./build-app.sh
+
+      - name: Zip app
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ditto -c -k --keepParent dist/Berth.app "dist/Berth-${VERSION}.zip"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/Berth-${GITHUB_REF_NAME#v}.zip" \
+            --title "Berth $GITHUB_REF_NAME" \
+            --generate-notes

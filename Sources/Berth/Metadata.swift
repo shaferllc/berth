@@ -92,16 +92,10 @@ struct PageMetadata: Sendable {
         var iconHrefs: [String] = []
 
         if let html = decodeText(Data(data.prefix(700_000))) {
-            if let raw = firstCapture("<title[^>]*>(.*?)</title>", in: html) {
-                meta.title = clean(raw)
-            }
-            // og:title beats an empty <title>
-            if meta.title?.isEmpty != false, let og = metaContent(in: html, keys: ["og:title"]) {
-                meta.title = clean(og)
-            }
-            meta.description = metaContent(in: html, keys: ["description", "og:description"])
-                .map(clean)
-            iconHrefs = iconLinks(in: html)
+            let head = parse(html: html)
+            meta.title = head.title
+            meta.description = head.description
+            iconHrefs = head.iconHrefs
         }
 
         // Favicon: declared <link rel=icon> candidates first, then /favicon.ico.
@@ -130,6 +124,29 @@ struct PageMetadata: Sendable {
         // Reject HTML error pages served with 200.
         if data.first == UInt8(ascii: "<") { return nil }
         return data
+    }
+
+    /// What we scrape out of a page's <head>. Internal (not private) so the
+    /// scraping is unit-testable without a network round-trip.
+    struct ParsedHead: Sendable {
+        var title: String?
+        var description: String?
+        var iconHrefs: [String] = []
+    }
+
+    static func parse(html: String) -> ParsedHead {
+        var head = ParsedHead()
+        if let raw = firstCapture("<title[^>]*>(.*?)</title>", in: html) {
+            head.title = clean(raw)
+        }
+        // og:title beats an empty <title>
+        if head.title?.isEmpty != false, let og = metaContent(in: html, keys: ["og:title"]) {
+            head.title = clean(og)
+        }
+        head.description = metaContent(in: html, keys: ["description", "og:description"])
+            .map(clean)
+        head.iconHrefs = iconLinks(in: html)
+        return head
     }
 
     // MARK: HTML scraping helpers (regex-based, good enough for metadata)
