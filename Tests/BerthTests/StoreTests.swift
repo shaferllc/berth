@@ -2,10 +2,12 @@ import XCTest
 
 @testable import Berth
 
-@MainActor
+// setUp/tearDown override nonisolated XCTestCase methods, so the class stays
+// nonisolated and only the test methods hop onto the main actor (where
+// BookmarkStore lives). XCTest runs everything on the main thread anyway.
 final class StoreTests: XCTestCase {
-    private var storeURL: URL!
-    private var savedSortPref: String?
+    private nonisolated(unsafe) var storeURL: URL!
+    private nonisolated(unsafe) var savedSortPref: String?
 
     override func setUp() {
         super.setUp()
@@ -26,6 +28,7 @@ final class StoreTests: XCTestCase {
         super.tearDown()
     }
 
+    @MainActor
     private func makeStore() -> BookmarkStore {
         let store = BookmarkStore(storeURL: storeURL, fetchesMetadata: false)
         store.sortOrder = .dateAdded
@@ -34,7 +37,7 @@ final class StoreTests: XCTestCase {
 
     // MARK: - Adding & duplicate detection
 
-    func testAddNewInsertsAtTopAndSelects() {
+    @MainActor func testAddNewInsertsAtTopAndSelects() {
         let store = makeStore()
         store.addNew(urlString: "https://example.com/a")
         let b = store.addNew(urlString: "https://example.com/b")
@@ -42,7 +45,7 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(store.selectedID, b.id)
     }
 
-    func testAddOrSelectDeduplicatesByNormalizedURL() {
+    @MainActor func testAddOrSelectDeduplicatesByNormalizedURL() {
         let store = makeStore()
         let first = store.addNew(urlString: "https://www.example.com/Article")
         // Same page, different trailing slash + fragment: must not add a duplicate.
@@ -52,7 +55,7 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(store.selectedID, first.id)
     }
 
-    func testFindExistingNormalizes() {
+    @MainActor func testFindExistingNormalizes() {
         let store = makeStore()
         store.addNew(urlString: "HTTPS://Example.com/x/")
         XCTAssertNotNil(store.findExisting(urlString: "https://example.com/x"))
@@ -61,7 +64,7 @@ final class StoreTests: XCTestCase {
 
     // MARK: - Delete & undo
 
-    func testDeleteThenUndoRestoresOrder() {
+    @MainActor func testDeleteThenUndoRestoresOrder() {
         let store = makeStore()
         let a = store.addNew(urlString: "https://example.com/a")
         let b = store.addNew(urlString: "https://example.com/b")
@@ -77,7 +80,7 @@ final class StoreTests: XCTestCase {
         XCTAssertFalse(store.canUndoDelete)
     }
 
-    func testDeleteClearsSelectionOfDeleted() {
+    @MainActor func testDeleteClearsSelectionOfDeleted() {
         let store = makeStore()
         let a = store.addNew(urlString: "https://example.com/a")
         store.delete(ids: [a.id])
@@ -85,7 +88,7 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(store.bookmarks.isEmpty)
     }
 
-    func testMultiDeleteUndoesAsOneBatch() {
+    @MainActor func testMultiDeleteUndoesAsOneBatch() {
         let store = makeStore()
         let a = store.addNew(urlString: "https://example.com/a")
         let b = store.addNew(urlString: "https://example.com/b")
@@ -97,7 +100,7 @@ final class StoreTests: XCTestCase {
 
     // MARK: - Tags
 
-    func testTagCountsAreCaseInsensitive() {
+    @MainActor func testTagCountsAreCaseInsensitive() {
         let store = makeStore()
         store.addNew(urlString: "https://example.com/1", tags: ["Swift", "macos"])
         store.addNew(urlString: "https://example.com/2", tags: ["swift"])
@@ -108,7 +111,7 @@ final class StoreTests: XCTestCase {
 
     // MARK: - Filtering & sorting
 
-    func testSidebarAndSearchFilters() {
+    @MainActor func testSidebarAndSearchFilters() {
         let store = makeStore()
         let fav = store.addNew(urlString: "https://example.com/fav", title: "Starred", tags: ["keep"])
         store.toggleFavorite(fav.id)
@@ -128,7 +131,7 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(store.visibleBookmarks.map(\.id), [fav.id])
     }
 
-    func testCombinedTagFiltersRequireAllTags() {
+    @MainActor func testCombinedTagFiltersRequireAllTags() {
         let store = makeStore()
         let both = store.addNew(urlString: "https://example.com/1", tags: ["a", "b"])
         store.addNew(urlString: "https://example.com/2", tags: ["a"])
@@ -136,7 +139,7 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(store.visibleBookmarks.map(\.id), [both.id])
     }
 
-    func testSortByTitleAndDomain() {
+    @MainActor func testSortByTitleAndDomain() {
         let store = makeStore()
         store.addNew(urlString: "https://zeta.org/1", title: "Beta")
         store.addNew(urlString: "https://alpha.com/2", title: "alpha")
@@ -150,7 +153,7 @@ final class StoreTests: XCTestCase {
 
     // MARK: - Persistence
 
-    func testSaveNowThenReloadRoundTrips() {
+    @MainActor func testSaveNowThenReloadRoundTrips() {
         var addedID: Bookmark.ID?
         do {
             let store = makeStore()
@@ -171,12 +174,12 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(b.isFavorite)
     }
 
-    func testMissingStoreFileYieldsEmptyStore() {
+    @MainActor func testMissingStoreFileYieldsEmptyStore() {
         let store = makeStore()
         XCTAssertTrue(store.bookmarks.isEmpty)
     }
 
-    func testCorruptStoreFileYieldsEmptyStoreWithoutCrashing() throws {
+    @MainActor func testCorruptStoreFileYieldsEmptyStoreWithoutCrashing() throws {
         try Data("not json{{".utf8).write(to: storeURL)
         let store = makeStore()
         XCTAssertTrue(store.bookmarks.isEmpty)
