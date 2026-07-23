@@ -1,36 +1,77 @@
 name: Release
 
+# The VERSION file is the trigger. Bump it in an ordinary commit, push, and
+# this cuts the release: tag, universal build, .zip + .dmg, GitHub release.
+# Push anything that doesn't change VERSION and this job checks, finds the
+# release already exists, and stops. No bot commits, no tags to remember.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   release:
-    name: Build & publish Berth.app
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test
-        run: swift test
+      - name: Read the VERSION file
+        id: v
+        run: echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Build app bundle
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}" ./build-app.sh
-
-      - name: Zip app
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          ditto -c -k --keepParent dist/Berth.app "dist/Berth-${VERSION}.zip"
-
-      - name: Create GitHub release
+      - name: Has this version already shipped?
+        id: gate
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "dist/Berth-${GITHUB_REF_NAME#v}.zip" \
-            --title "Berth $GITHUB_REF_NAME" \
+          if gh release view "v${{ steps.v.outputs.version }}" >/dev/null 2>&1; then
+            echo "v${{ steps.v.outputs.version }} is already released — nothing to do."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v${{ steps.v.outputs.version }} is new — building."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the universal app bundle
+        if: steps.gate.outputs.publish == 'true'
+        run: ./build-app.sh --universal
+
+      - name: Package the zip and disk image
+        if: steps.gate.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          V="${{ steps.v.outputs.version }}"
+          /usr/bin/ditto -c -k --keepParent dist/Berth.app "dist/Berth-$V.zip"
+          DMG_ROOT="$(mktemp -d)"
+          /bin/cp -R dist/Berth.app "$DMG_ROOT/Berth.app"
+          /bin/ln -s /Applications "$DMG_ROOT/Applications"
+          /usr/bin/hdiutil create -volname "Berth $V" -srcfolder "$DMG_ROOT" \
+            -fs HFS+ -format UDZO -ov -quiet "dist/Berth-$V.dmg"
+
+      - name: Verify the disk image
+        if: steps.gate.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          V="${{ steps.v.outputs.version }}"
+          # Both architectures, or the download is broken for every Intel Mac.
+          lipo -archs dist/Berth.app/Contents/MacOS/Berth | tee /dev/stderr | grep -q x86_64
+          lipo -archs dist/Berth.app/Contents/MacOS/Berth | grep -q arm64
+          hdiutil attach "dist/Berth-$V.dmg" -nobrowse -quiet -mountpoint /tmp/dmg
+          test -x /tmp/dmg/Berth.app/Contents/MacOS/Berth
+          test -L /tmp/dmg/Applications
+          hdiutil detach /tmp/dmg -quiet
+
+      - name: Publish the release
+        if: steps.gate.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.v.outputs.version }}"
+          gh release create "v$V" dist/Berth-*.dmg dist/Berth-*.zip \
+            --target "$GITHUB_SHA" \
+            --title "Berth v$V" \
             --generate-notes
